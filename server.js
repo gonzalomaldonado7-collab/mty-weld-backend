@@ -29,5 +29,5 @@ app.post('/generate', async (req, res) => {
 });
 
 app.get('/', (req, res) => res.send('MTY Weld Backend OK'));
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Puerto ${PORT}`));
