@@ -2,16 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type']
-}));
+app.use(cors({ origin: '*', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type'] }));
 app.use(express.json());
 
 app.post('/generate', async (req, res) => {
   const { prompt } = req.body;
-  
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -26,7 +21,6 @@ app.post('/generate', async (req, res) => {
         messages: [{ role: 'user', content: prompt }]
       })
     });
-
     const data = await response.json();
     res.json(data);
   } catch (error) {
@@ -35,6 +29,5 @@ app.post('/generate', async (req, res) => {
 });
 
 app.get('/', (req, res) => res.send('MTY Weld Backend OK'));
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`Puerto ${PORT}`));
