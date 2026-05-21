@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
+const axios = require('axios');
 
 const app = express();
 
@@ -11,6 +11,35 @@ app.get('/', (req, res) => {
   res.send('MTY Weld Backend OK');
 });
 
+async function callAnthropic(prompt, retries = 2) {
+  try {
+    const response = await axios.post(
+      'https://api.anthropic.com/v1/messages',
+      {
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 800,
+        messages: [{ role: 'user', content: prompt }]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        timeout: 15000
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('ERROR ANTHROPIC:', error.response?.data || error.message);
+    if (retries > 0) {
+      console.log('Reintentando...');
+      return callAnthropic(prompt, retries - 1);
+    }
+    throw error;
+  }
+}
+
 app.post('/generate', async (req, res) => {
   const { prompt } = req.body;
 
@@ -18,38 +47,20 @@ app.post('/generate', async (req, res) => {
     return res.status(400).json({ error: 'Prompt invalido' });
   }
 
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('API KEY NO DEFINIDA');
+    return res.status(500).json({ error: 'API key no configurada' });
+  }
+
+  console.log('API KEY presente:', process.env.ANTHROPIC_API_KEY.slice(0, 10) + '...');
+
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-3-5-sonnet-latest',
-        max_tokens: 800,
-        messages: [{ role: 'user', content: prompt }]
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Anthropic error:', data);
-      return res.status(500).json({ error: 'Error en API de IA', detail: data });
-    }
+    const data = await callAnthropic(prompt);
 
     const text = data.content
-      ?.filter(x => x.type === 'text')
+      .filter(x => x.type === 'text')
       .map(x => x.text)
-      .join('') || '';
+      .join('').trim();
 
     let parsed = null;
     try {
@@ -65,11 +76,11 @@ app.post('/generate', async (req, res) => {
     res.json({ ok: true, raw: text, parsed });
 
   } catch (error) {
-    console.error('ERROR REAL:', error);
-    if (error.name === 'AbortError') {
-      return res.status(500).json({ error: 'Timeout de la API' });
-    }
-    res.status(500).json({ error: 'Error interno del servidor', detail: error.message });
+    console.error('ERROR FINAL:', error.response?.data || error.message);
+    res.status(500).json({
+      error: 'Error en generacion',
+      detail: error.response?.data || error.message
+    });
   }
 });
 
