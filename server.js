@@ -16,7 +16,7 @@ async function callAnthropic(prompt, retries = 2) {
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-3-5-sonnet-latest',
         max_tokens: 800,
         messages: [{ role: 'user', content: prompt }]
       },
