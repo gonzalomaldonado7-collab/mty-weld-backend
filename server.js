@@ -103,9 +103,12 @@ app.post('/generate-flyer', async (req, res) => {
 
     res.json({ ok: true, image_url: imageUrl });
   } catch (error) {
-    console.error('ERROR FLYER:', error.message);
-    res.status(500).json({ error: 'Flyer generation failed', detail: error.message });
+    console.error('ERROR FLYER FULL:', error);
+    console.error('STACK:', error?.stack);
+    res.status(500).json({ error: error?.message || 'Unknown error', detail: error?.stack });
   }
+});
+    
 });
 
 const PORT = process.env.PORT || 8080;
