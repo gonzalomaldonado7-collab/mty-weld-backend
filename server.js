@@ -1,16 +1,43 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const sharp = require('sharp');
+const cloudinary = require('cloudinary').v2;
+const fs = require('fs');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
+// Cloudinary config
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Output folder
+const OUTPUT_DIR = path.join(__dirname, 'output');
+if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+
+// Upload to Cloudinary
+const uploadToCloudinary = async (filePath) => {
+  const result = await cloudinary.uploader.upload(filePath, {
+    folder: 'mty-weld-flyers',
+  });
+  return result.secure_url;
+};
+
+// ── ENDPOINT: health check
 app.get('/', (req, res) => {
   res.send('MTY Weld Backend OK');
 });
 
+// ── ENDPOINT: generate text ads
 async function callAnthropic(prompt, retries = 2) {
   try {
     const response = await axios.post(
@@ -42,49 +69,52 @@ async function callAnthropic(prompt, retries = 2) {
 
 app.post('/generate', async (req, res) => {
   const { prompt } = req.body;
-
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Prompt invalido' });
   }
-
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.error('API KEY NO DEFINIDA');
     return res.status(500).json({ error: 'API key no configurada' });
   }
-
-  console.log('API KEY presente:', process.env.ANTHROPIC_API_KEY.slice(0, 10) + '...');
-
   try {
     const data = await callAnthropic(prompt);
-
-    const text = data.content
-      .filter(x => x.type === 'text')
-      .map(x => x.text)
-      .join('').trim();
-
+    const text = data.content.filter(x => x.type === 'text').map(x => x.text).join('').trim();
     let parsed = null;
     try {
       const start = text.indexOf('{');
       const end = text.lastIndexOf('}');
-      if (start !== -1 && end !== -1) {
-        parsed = JSON.parse(text.slice(start, end + 1));
-      }
-    } catch (e) {
-      console.warn('No se pudo parsear JSON');
-    }
-
+      if (start !== -1 && end !== -1) parsed = JSON.parse(text.slice(start, end + 1));
+    } catch (e) {}
     res.json({ ok: true, raw: text, parsed });
-
   } catch (error) {
-    console.error('ERROR FINAL:', error.response?.data || error.message);
-    res.status(500).json({
-      error: 'Error en generacion',
-      detail: error.response?.data || error.message
-    });
+    res.status(500).json({ error: 'Error en generacion', detail: error.response?.data || error.message });
   }
 });
 
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
-});
+// ── ENDPOINT: generate flyer (Mock Visual Engine)
+app.post('/generate-flyer', async (req, res) => {
+  try {
+    const { product_name, price, angle, copy_text } = req.body;
+    if (!product_name || !price || !copy_text) {
+      return res.status(400).json({ error: 'Missing fields' });
+    }
+
+    const id = uuidv4();
+
+    // 1. FONDO MOCK — gradiente oscuro industrial
+    const background = await sharp({
+      create: {
+        width: 1080,
+        height: 1080,
+        channels: 4,
+        background: { r: 10, g: 30, b: 63, alpha: 1 }
+      }
+    }).png().toBuffer();
+
+    // 2. CAPA DE TEXTO SVG
+    const textSVG = `
+    <svg width="1080" height="1080" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1080" height="1080" fill="rgba(0,0,0,0.5)"/>
+      <text x="60" y="200" font-size="72" font-weight="bold" fill="white" font-family="Arial">${product_name}</text>
+      <text x="60" y="310" font-size="80" font-weight="bold" fill="#f5b400" font-family="Arial">$${price} MXN</text>
+      <text x="60" y="420" font-size="36" fill="white" font-family="Arial">${angle.toUpperCase()}</text>
+      <text x="60" y="520" font-size="30" fill="#cccccc" font-family="Arial">${copy_text.slice(0, 80)}</text>
