@@ -65,19 +65,26 @@ app.post('/generate', async (req, res) => {
 
 app.post('/generate-flyer', async (req, res) => {
   try {
+    console.log('BODY RECIBIDO:', req.body);
+
     const { product_name, price, angle, copy_text } = req.body;
-    if (!product_name || !price || !copy_text) return res.status(400).json({ error: 'Missing fields' });
+    if (!product_name || !price || !copy_text) {
+      return res.status(400).json({ error: 'Missing fields' });
+    }
 
+    console.log('PASO 1: Creando fondo...');
     const id = uuidv4();
-
     const background = await sharp({
       create: { width: 1080, height: 1080, channels: 4, background: { r: 10, g: 30, b: 63, alpha: 1 } }
     }).png().toBuffer();
+    console.log('PASO 1 OK');
 
-    const safeProduct = product_name.replace(/&/g, '&amp;');
-    const safeCopy1 = copy_text.slice(0, 80).replace(/&/g, '&amp;');
-    const safeCopy2 = copy_text.slice(80, 160).replace(/&/g, '&amp;');
-    const safeAngle = angle ? angle.toUpperCase() : '';
+    console.log('PASO 2: Creando SVG...');
+    const safeProduct = (product_name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeCopy = (copy_text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeAngle = (angle || '').toUpperCase();
+    const safeCopy1 = safeCopy.slice(0, 80);
+    const safeCopy2 = safeCopy.slice(80, 160);
 
     const textSVG = `<svg width="1080" height="1080" xmlns="http://www.w3.org/2000/svg">
       <rect width="1080" height="1080" fill="rgba(0,0,0,0.5)"/>
@@ -89,26 +96,35 @@ app.post('/generate-flyer', async (req, res) => {
       <text x="60" y="900" font-size="32" fill="#f5b400" font-family="Arial">MTY WELD &amp; TOOLS</text>
       <text x="60" y="950" font-size="28" fill="white" font-family="Arial">Monterrey, NL</text>
     </svg>`;
+    console.log('PASO 2 OK');
 
-    const textBuffer = Buffer.from(textSVG);
+    console.log('PASO 3: Componiendo imagen...');
     const finalPath = path.join(OUTPUT_DIR, `${id}-flyer.png`);
-
     await sharp(background)
-      .composite([{ input: textBuffer, top: 0, left: 0 }])
+      .composite([{ input: Buffer.from(textSVG), top: 0, left: 0 }])
       .png()
       .toFile(finalPath);
+    console.log('PASO 3 OK');
 
+    console.log('PASO 4: Subiendo a Cloudinary...');
     const imageUrl = await uploadToCloudinary(finalPath);
+    console.log('PASO 4 OK - URL:', imageUrl);
+
     fs.unlinkSync(finalPath);
 
     res.json({ ok: true, image_url: imageUrl });
+
   } catch (error) {
-    console.error('ERROR FLYER FULL:', error);
-    console.error('STACK:', error?.stack);
-    res.status(500).json({ error: error?.message || 'Unknown error', detail: error?.stack });
+    console.log('ERROR COMPLETO:', JSON.stringify(error, null, 2));
+    console.log('STACK:', error?.stack);
+    console.log('MESSAGE:', error?.message);
+    console.log('NAME:', error?.name);
+    res.status(500).json({
+      error: error?.message || 'Unknown error',
+      detail: error?.stack
+    });
   }
 });
-    
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
